@@ -1,3 +1,4 @@
+/*************** Config de la carte SD ****************/
 #include <SPI.h>           
 #define USE_SDFAT
 #include <SdFat.h>          
@@ -9,6 +10,8 @@
 SoftSpiDriver<12, 11, 13> softSpi;
 SdFat SD;
 #define SD_CS SdSpiConfig(10, DEDICATED_SPI, SD_SCK_MHZ(0), &softSpi)
+
+/*************** Config de l'ecran ****************/
 
 #include <Adafruit_GFX.h>   
 #include <MCUFRIEND_kbv.h>
@@ -28,10 +31,20 @@ MCUFRIEND_kbv tft;
 #define GOLD 56768
 #define WHITE 65535
 
-int days = 450;
-int hours = 23;
-int minutes = 33;
-int seconds = 20;
+/***************Config de la clock ****************/
+
+#include <Wire.h>
+#include <DS3231.h>
+#include <Time.h>
+DS3231 DSclock;
+RTCDateTime clockDate;
+tm dateNow;
+tm pascaleDate;
+
+int days = 0;
+int hours = 0;
+int minutes = 0;
+int seconds = 0;
 
 void setup()
 {
@@ -42,11 +55,27 @@ void setup()
     if (ID == 0x0D3D3) ID = 0x9481;
     tft.begin(ID);
     tft.setRotation(1);
+    Serial.println("Initialize SD");
     bool good = SD.begin(SD_CS);
     if (!good) {
         Serial.print(F("cannot start SD"));
         while (1);
     }
+    
+    Serial.println("Initialize DS3231");
+    DSclock.begin();
+    
+    // Set date, laisser en commentaire sauf besoin de reset la date actuel
+    // __DATE__, __TIME__ -> temps recuperé sur la compilation
+    //DSclock.setDateTime(__DATE__, __TIME__);  
+
+    pascaleDate.tm_hour = 02; 
+    pascaleDate.tm_min = 00; 
+    pascaleDate.tm_sec = 00; 
+    pascaleDate.tm_mday = 21;
+    pascaleDate.tm_mon = 02 - 1;
+    pascaleDate.tm_year = 2020 - 1900;
+
     openAndDrawImage();
 }
 
@@ -57,13 +86,11 @@ void loop()
 
 void drawCompteur()
 {
-   delay(1000);
-   //DateTime now = rtc.now(); //get the current date-time
-   //minuteNow = now.minute();
-   //TODO get current time 
-   // + get difference with pascale date
-   seconds++;
-
+   
+   clockDate = DSclock.getDateTime();
+   dateNow = RTCDateTimeConvert(clockDate);
+   computeChastityTime(pascaleDate, dateNow);
+   
    tft.setTextColor(TFT_WHITE, TFT_BLACK);
    tft.setCursor(5, 20);
    tft.setTextSize(4);
@@ -72,16 +99,25 @@ void drawCompteur()
    tft.print(" jours ");
    tft.setCursor(5, 60);
    tft.setTextSize(4);
+   if(hours<10){
+      tft.print("0");
+   }
    tft.print(String(hours));
    tft.setTextSize(2);
    tft.print(" heures");
    tft.setCursor(5, 100);
    tft.setTextSize(4);
+   if(minutes<10){
+    tft.print("0");
+   }
    tft.print(String(minutes));
    tft.setTextSize(2);
    tft.print(" minutes");
    tft.setCursor(5, 140);
    tft.setTextSize(4);
+   if(seconds<10){
+      tft.print("0");
+   }
    tft.print(String(seconds));
    tft.setTextSize(2);
    tft.print(" secondes");
@@ -131,7 +167,42 @@ void openAndDrawImage(){
    }
 }
 
+/******************************************************************************************************************************
+ *
+ * Date related functions
+ * 
+ ******************************************************************************************************************************/
 
+tm RTCDateTimeConvert(RTCDateTime dt){
+  tm result;
+  result.tm_hour = dt.hour; 
+  result.tm_min = dt.minute; 
+  result.tm_sec = dt.second; 
+  result.tm_mday = dt.day;
+  result.tm_mon = dt.month - 1;
+  result.tm_year = dt.year - 1900; // Year is offset from 1900
+  return result;
+}
+void computeChastityTime(tm T1, tm T2){
+
+  // convert T1 and T2 to seconds since 1/1/1970
+  time_t T1sec = mktime(&T1);
+  time_t T2sec = mktime(&T2);
+
+  // differences in seconds
+  int32_t diff = difftime(T2sec, T1sec);
+
+  
+  // difference in days, hours, minutes and seconds
+  days = diff/ 86400;
+
+  diff = diff % 86400;
+  hours = diff / 3600;
+  diff = diff % 3600;
+  minutes = diff / 60;
+  diff = diff % 60;
+  seconds = diff;
+}
 
 /******************************************************************************************************************************
  *
